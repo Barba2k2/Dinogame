@@ -1,53 +1,50 @@
 import pygame
 from pygame.locals import *
-from sys import exit
 import os
 from random import randrange, choice
 
+# Inicialização do Pygame
 pygame.init()
 pygame.mixer.init()
 
+# Configurações de diretório
 diretorio_principal = os.path.dirname(__file__)
 diretorio_imagens = os.path.join(diretorio_principal, 'images')
 diretorio_sons = os.path.join(diretorio_principal, 'sounds')
 
+# Constantes de tela
 LARGURA = 1280
 ALTURA = 720
-BRANCO = (255,255,255)
+BRANCO = (255, 255, 255)
+
+# Configurações de jogo
 velocidade_jogo = 10
+colidiu = False
+pontos = 0
+escolha_obstaculo = choice([0, 1])
 
+# Configuração da tela
 tela = pygame.display.set_mode((LARGURA, ALTURA))
-
 pygame.display.set_caption('Dino Game')
 
-background = pygame.image.load(os.path.join(diretorio_imagens, 'floor.png')).convert_alpha()
-bg_size = background.get_size()
-
-# Carregar a imagem de fundo
+# Carregamento de imagens
 background_image = pygame.image.load(os.path.join(diretorio_imagens, 'desert.png')).convert()
-
-# Ajustar o tamanho da imagem para cobrir toda a tela, se necessário
 background_image = pygame.transform.scale(background_image, (LARGURA, ALTURA))
+chao_sprites = pygame.sprite.Group()
+numero_pecas = (LARGURA // background_image.get_width()) + 2
 
+# Carregamento de sons
 som_colisao = pygame.mixer.Sound(os.path.join(diretorio_sons, 'death_sound.wav'))
 som_colisao.set_volume(1)
-
 som_pontuacao = pygame.mixer.Sound(os.path.join(diretorio_sons, 'score_sound.wav'))
 som_pontuacao.set_volume(1)
 
-colidiu = False
-
-escolha_obstaculo = choice([0, 1])
-
-pontos = 0
-
-fonte = pygame.font.SysFont('comicsansms', 40)
-
+# Funções auxiliares
 def exibe_mensagem(msg, tamanho, cor):
     cor = (255, 255, 255)
+    msg = f'{msg}'
     fonte = pygame.font.SysFont('comicsansms', tamanho, True, False)
-    mensagem = f'{msg}' 
-    texto_formatado = fonte.render(mensagem, True, cor)
+    texto_formatado = fonte.render(msg, True, cor)
     return texto_formatado
 
 def reiniciar_jogo():
@@ -55,17 +52,17 @@ def reiniciar_jogo():
     pontos = 0
     velocidade_jogo = 10
     colidiu = False
-    dino.rect.y = ALTURA - 96 - dino.image.get_height()  # Ajuste para que o dino volte à altura correta
-    dino.pulo = False
-    cacto.rect.x = LARGURA
     escolha_obstaculo = choice([0, 1])
-    
+    dino.rect.bottom = dino.pos_y_inicial  # Correção para garantir que o dino alinhe com o chão
+    dino.pulo = False
+    dino.vel_y = 0  # Reiniciar a velocidade vertical
+    cacto.rect.x = LARGURA
+
 def mostrar_menu(tela, fonte):
     overlay = pygame.Surface((LARGURA, ALTURA))
     overlay.fill((0, 0, 0))
     overlay.set_alpha(128)
     tela.blit(overlay, (0, 0))
-
     mensagem_menu = 'Aperte ENTER para iniciar'
     texto_menu = fonte.render(mensagem_menu, True, (255, 255, 255))
     tela.blit(texto_menu, (LARGURA // 2 - texto_menu.get_width() // 2, ALTURA // 2 - texto_menu.get_height() // 2))
@@ -94,7 +91,7 @@ class Dino(pygame.sprite.Sprite):
         ]
         
         # Se necessário, ajustar os quadros (mudar o fator de escala conforme necessário)
-        self.imagens_dinossauro = [pygame.transform.scale(img, (96, 96)) for img in self.imagens_dinossauro]
+        self.imagens_dinossauro = [pygame.transform.scale(img, (128, 128)) for img in self.imagens_dinossauro]
         
         self.index_lista = 0
         self.image = self.imagens_dinossauro[self.index_lista]
@@ -145,19 +142,25 @@ class Nuvens(pygame.sprite.Sprite):
         cloud_position = randrange(6) * cloud_width
         self.image = cloud_strip.subsurface((cloud_position, 0), (cloud_width, cloud_height))
         
-        self.image = pygame.transform.scale(self.image, (cloud_width * 2, cloud_height * 2))  # Ajuste opcional de escala
+        # Aplicar coloração branca
+        white_surface = pygame.Surface(self.image.get_size(), pygame.SRCALPHA)
+        white_surface.fill((255, 255, 255, 180))  # Branco com opacidade
+        self.image.blit(white_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+        # Tamanho randômico
+        scale_factor = randrange(5, 10) / 10.0  # Escala randômica entre 0.5 e 1.0
+        self.image = pygame.transform.scale(self.image, (int(cloud_width * scale_factor), int(cloud_height * scale_factor)))
+        
         self.rect = self.image.get_rect()
         self.rect.y = randrange(50, 200, 50)  # Variação na altura das nuvens
         self.rect.x = LARGURA + randrange(0, 300)  # Começam fora da tela à direita
 
-        self.velocidade = randrange(1, 5)  # Velocidade variável para cada nuvem
+        self.velocidade = randrange(1, 3)  # Velocidade mais uniforme para as nuvens
 
     def update(self):
         self.rect.x -= self.velocidade
         if self.rect.right < 0:  # Resetar a posição da nuvem quando sair da tela
-            self.rect.left = LARGURA
-            self.rect.y = randrange(50, 200, 50)
-            self.velocidade = randrange(1, 5)  # Nova velocidade quando reciclada
+            self.kill()  # Remover a nuvem antiga e criar uma nova abaixo
 
 class Chao(pygame.sprite.Sprite):
     def __init__(self, pos_x):
@@ -169,10 +172,10 @@ class Chao(pygame.sprite.Sprite):
 
     def update(self):
         self.rect.x -= velocidade_jogo
-        if self.rect.right < 0:  # Se a parte direita do chão sair da tela, move para a direita da última peça
-            self.rect.left = LARGURA
+        if self.rect.right < 0:
+            last_chao = chao_sprites.sprites()[-1]
+            self.rect.left = last_chao.rect.right - velocidade_jogo  # Ajuste para garantir que não haja espaços entre as peças do chão
 
-    
 class Cacto(pygame.sprite.Sprite):
     def __init__(self):
         pygame.sprite.Sprite.__init__(self)
@@ -180,8 +183,8 @@ class Cacto(pygame.sprite.Sprite):
         # Carregar a imagem original do cacto
         original_image = pygame.image.load(os.path.join(diretorio_imagens, 'cactus.png')).convert_alpha()
         
-        # Definir um fator de escala
-        scale_factor = 1.5  # Ajuste este valor conforme necessário para aumentar ou diminuir o tamanho do cacto
+        # Define tamanho do cacto
+        scale_factor = 2 
         
         # Obter as novas dimensões
         new_width = int(original_image.get_width() * scale_factor)
@@ -192,13 +195,12 @@ class Cacto(pygame.sprite.Sprite):
         
         # Configurar o rect do sprite
         self.rect = self.image.get_rect()
-        self.rect.bottomleft = (LARGURA, ALTURA - 96)  # Adjust 64 if necessary to match ground height
+        self.rect.bottomleft = (LARGURA, ALTURA - 128)  # Adjust 64 if necessary to match ground height
 
     def update(self):
         self.rect.x -= velocidade_jogo  # Move the cactus left
         if self.rect.right < 0:  # Reset position if it goes off-screen
             self.rect.left = LARGURA
-
 
 class Background(pygame.sprite.Sprite):
     def __init__(self):
@@ -241,43 +243,35 @@ class Background(pygame.sprite.Sprite):
 #             self.index_lista += 0.25
 #             self.image = self.imagens_dinossauro[int(self.index_lista)]
 
+# Grupos de sprites
 todas_as_sprites = pygame.sprite.Group()
-dino = Dino()
-todas_as_sprites.add(dino)
-
-for i in range(4):
-    nuvem = Nuvens()
-    todas_as_sprites.add(nuvem)
-
 chao_sprites = pygame.sprite.Group()
-floor_length = bg_size[0]
-for i in range(0, LARGURA + floor_length, floor_length):
-    chao = Chao(i // floor_length)
-    chao.rect.y = dino.rect.bottom - 8
-    chao_sprites.add(chao)
-    
 nuvens_sprites = pygame.sprite.Group()
-for _ in range(10):  # Criar 10 nuvens
+grupo_obstaculos = pygame.sprite.Group()
+
+# Criação de instâncias
+dino = Dino()
+cacto = Cacto()
+todas_as_sprites.add(dino, cacto)
+chao_sprites.add(Chao(0))  # Exemplo: ajustar conforme necessário
+nuvens_sprites.add(Nuvens())  # Adicionar múltiplas nuvens conforme necessário
+grupo_obstaculos.add(cacto)
+
+for i in range(numero_pecas):
+    chao = Chao(i)
+    chao_sprites.add(chao)
+
+quantidade_nuvens = randrange(2, 8)  # Número aleatório de nuvens
+for _ in range(quantidade_nuvens):
     nuvem = Nuvens()
     nuvens_sprites.add(nuvem)
 
-todas_as_sprites.add(*nuvens_sprites)  # Adicionar todas as nuvens ao grupo de sprites principal
-
-
-cacto = Cacto()
-todas_as_sprites.add(cacto)
-
-# dino_voador = DinoVoador()
-# todas_as_sprites.add(dino_voador)
-
-grupo_obstaculos = pygame.sprite.Group()
-grupo_obstaculos.add(cacto)
-# grupo_obstaculos.add(dino_voador)
-
+# Configuração do relógio
 relogio = pygame.time.Clock()
-mostrar_menu(tela, fonte)
-# Loop principal do jogo
-# Loop principal do jogo
+mostrar_menu(tela, pygame.font.SysFont('comicsansms', 40))
+
+# Laço principal do jogo
+# Laço principal do jogo
 while True:
     relogio.tick(30)
     
@@ -287,46 +281,66 @@ while True:
             exit()
         if event.type == KEYDOWN:
             if event.key == K_SPACE and not colidiu:
-                if dino.rect.bottom == dino.pos_y_inicial:
+                if dino.rect.bottom >= dino.pos_y_inicial:
                     dino.pular()
             if event.key == K_r and colidiu:
                 reiniciar_jogo()
 
-    # Desenhar o fundo primeiro
+    # Renderizar o fundo
     tela.blit(background_image, (0, 0))
 
-    # Atualiza e desenha o chão apenas se não houve colisão
-    if not colidiu:
-        chao_sprites.update()
-
-    chao_sprites.draw(tela)
-
-    # Atualiza todas as outras sprites apenas se não houve colisão
+    # Atualizar e desenhar todos os sprites
     if not colidiu:
         todas_as_sprites.update()
+        chao_sprites.update()
+        nuvens_sprites.update()
+
+        # Verificar se a pontuação deve ser aumentada e aumentar a velocidade do jogo
+        pontos += 1
         if pontos % 100 == 0 and pontos != 0:
             som_pontuacao.play()
             if velocidade_jogo < 20:
                 velocidade_jogo += 1
-        pontos += 1
 
-    todas_as_sprites.draw(tela)  # Desenhar todas as sprites na tela depois do fundo e do chão
+    # Adicionar novo chão se necessário
+    # Nós só queremos adicionar uma peça de cada vez, então não precisamos de um loop aqui
+    last_chao = max(chao_sprites, key=lambda c: c.rect.right)
+    if last_chao.rect.right <= LARGURA:
+        new_chao = Chao(last_chao.rect.right // last_chao.rect.width)
+        chao_sprites.add(new_chao)
 
-    # Exibir a pontuação sempre, independente do estado de colisão
-    texto_pontos = exibe_mensagem(str(pontos), 40, (0,0,0))
-    tela.blit(texto_pontos, (520, 30))
-
-    # Detecção de colisão
+    # Verificar colisões
     colisoes = pygame.sprite.spritecollide(dino, grupo_obstaculos, False, pygame.sprite.collide_mask)
     if colisoes and not colidiu:
         som_colisao.play()
         colidiu = True
+    
+    # Atualizar as nuvens
+    nuvens_sprites.update()
 
-    # Exibe as mensagens de game over, se necessário
+    # Checar se as nuvens saíram da tela e criar novas se necessário
+    for nuvem in list(nuvens_sprites):
+        if nuvem.rect.right < 0:
+            nuvens_sprites.remove(nuvem)
+            if len(nuvens_sprites) < quantidade_nuvens:
+                new_nuvem = Nuvens()
+                nuvens_sprites.add(new_nuvem)
+
+    # Desenhar o chão e os sprites na tela
+    chao_sprites.draw(tela)
+    nuvens_sprites.draw(tela)
+    todas_as_sprites.draw(tela)
+
+    # Exibir a pontuação
+    texto_pontos = exibe_mensagem(str(pontos), 40, BRANCO)
+    tela.blit(texto_pontos, (LARGURA - texto_pontos.get_width() - 20, 20))
+
+    # Exibir mensagem de game over se colidiu
     if colidiu:
-        game_over = exibe_mensagem('GAME OVER', 40, (0,0,0))
+        game_over = exibe_mensagem('GAME OVER', 40, BRANCO)
         tela.blit(game_over, (LARGURA // 2 - game_over.get_width() // 2, ALTURA // 2))
-        restart = exibe_mensagem('Pressione R para reiniciar', 20, (0,0,0))
+        restart = exibe_mensagem('Pressione R para reiniciar', 20, BRANCO)
         tela.blit(restart, (LARGURA // 2 - restart.get_width() // 2, ALTURA // 2 + 60))
 
+    # Atualizar a tela
     pygame.display.flip()
